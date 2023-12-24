@@ -1,23 +1,18 @@
-import pycuda.autoinit
-import pycuda.driver as cuda
-import pycuda.gpuarray as gpuarray
-from pycuda.compiler import SourceModule
+import pyopencl as cl
 import time
 import cv2
 import numpy as np
 
-# CUDA kernel для уменьшения размера изображения (аналог pyrDown)
-PYRDOWN_KERNEL = SourceModule("""
-__global__ void pyr_down(float *src, float *dest, int width, int height)
-{
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
+# OpenCL kernel
+OPENCL_KERNEL = """
+__kernel void pyr_down(__global float *src, __global float *dest, int width, int height) {
+    int x = get_global_id(0);
+    int y = get_global_id(1);
 
     int new_width = width / 2;
     int new_height = height / 2;
 
-    if (x < new_width && y < new_height)
-    {
+    if (x < new_width && y < new_height) {
         int idx = (y * 2 * width + x * 2) * 3;  // Индекс для RGB
         float r = (src[idx] + src[idx + 3] + src[idx + width * 3] + src[idx + width * 3 + 3]) / 4.0;
         float g = (src[idx + 1] + src[idx + 4] + src[idx + width * 3 + 1] + src[idx + width * 3 + 4]) / 4.0;
@@ -28,25 +23,39 @@ __global__ void pyr_down(float *src, float *dest, int width, int height)
         dest[(y * new_width + x) * 3 + 2] = b;
     }
 }
-""").get_function("pyr_down")
+"""
 
 
 def gpu_pyr_down(image):
-    # Функция для уменьшения размера изображения на GPU
+    # Инициализация OpenCL
+    platform = cl.get_platforms()[0]
+    device = platform.get_devices()[0]
+    context = cl.Context([device])
+    queue = cl.CommandQueue(context)
+
+    mf = cl.mem_flags
+    src_buf = cl.Buffer(context, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=image)
+    dest_buf = cl.Buffer(context, mf.WRITE_ONLY, image.nbytes // 4)
+
+    # Компиляция ядра
+    program = cl.Program(context, OPENCL_KERNEL).build()
+
+    # Размеры изображения
     height, width, _ = image.shape
     new_width = width // 2
     new_height = height // 2
     output = np.zeros((new_height, new_width, 3), dtype=np.float32)
 
-    block = (16, 16, 1)
-    grid = (new_width // block[0], new_height // block[1])
-    PYRDOWN_KERNEL(cuda.In(image), cuda.Out(output), np.int32(width), np.int32(height), block=block, grid=grid)
+    # Выполнение ядра
+    program.pyr_down(queue, (new_width, new_height), None, src_buf, dest_buf, np.int32(width), np.int32(height))
+
+    # Чтение результата
+    cl.enqueue_copy(queue, output, dest_buf).wait()
 
     return output
 
 
 def measure_gpu_processing_time(image_path, output_path):
-    # Основная функция с расчётом времени прохода
     start_time = time.time()
 
     image = cv2.imread(image_path).astype(np.float32)
@@ -58,7 +67,6 @@ def measure_gpu_processing_time(image_path, output_path):
 
 
 def average_gpu_processing_time(image_path, output_path, runs=3):
-    # Функция для запуска проходов
     total_time = 0
     for run in range(runs):
         run_time = measure_gpu_processing_time(image_path, output_path)
