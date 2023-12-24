@@ -132,6 +132,7 @@ def average_gpu_processing_time(image_path, output_path, threshold, kernel_size,
 
 if __name__ == "__main__":
     images = ["img_10280x7680.jpg", "img_12800x9600.jpg", "img_20480x15360.jpg"]
+    print('Тестирование программы А\n')
     for image in images:
         average_time = average_gpu_processing_time(image, f"convert_{image}", 150, 2)
         print(f"Среднее время обработки для изображения {image}: {average_time} секунд\n")

@@ -77,6 +77,7 @@ def average_gpu_processing_time(image_path, output_path, runs=3):
 
 if __name__ == "__main__":
     images = ["img_10280x7680.jpg", "img_12800x9600.jpg", "img_20480x15360.jpg"]
+    print('Тестирование программы B\n')
     for image in images:
         average_time = average_gpu_processing_time(image, f"pyramid_{image}")
         print(f"Среднее время обработки для изображения {image}: {average_time} секунд\n")
